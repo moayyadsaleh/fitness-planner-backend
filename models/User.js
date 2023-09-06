@@ -14,7 +14,14 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  googleId: {
+    type: String, // Store Google authentication ID
+  },
+  facebookId: {
+    type: String, // Store Facebook authentication ID
+  },
 });
+
 const User = mongoose.model("User", userSchema);
 
 module.exports = User;
