@@ -4,9 +4,6 @@ const express = require("express");
 const mongoose = require("mongoose");
 const session = require("express-session");
 const passport = require("passport");
-const { Strategy: GoogleStrategy } = require("passport-google-oauth20");
-const passportFacebook = require("passport-facebook");
-const { body, validationResult } = require("express-validator");
 const bodyParser = require("body-parser");
 const router = express.Router();
 const passportLocalMongoose = require("passport-local-mongoose");
@@ -17,7 +14,7 @@ const PORT = process.env.PORT || 8080;
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
 //Start the session using express-session
@@ -37,7 +34,7 @@ app.use(passport.session());
 
 app.use(express.urlencoded({ extended: true }));
 
-// Connect to MongoDB (make sure you have MongoDB installed and running)
+// Connect to MongoDB
 mongoose.connect("mongodb://127.0.0.1:27017/workoutDB", {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -148,334 +145,110 @@ const workoutSchema = new mongoose.Schema({
     type: String,
   },
 });
-
 // Create a Mongoose model for the Workout schema
 const Workout = mongoose.model("Workout", workoutSchema);
-
-//Set up Passport and use local strategy.This is used in scenarios where you want to
-//handle authentication based on manual input of username (usually email) and password
 passport.use(User.createStrategy());
-const FacebookStrategy = passportFacebook.Strategy;
 
-// When dealing with manual input of a username (usually email) and password for local authentication, you need to implement serialization
-// and deserialization of user objects. This is necessary to manage user sessions and authentication state.
-passport.serializeUser(function (user, done) {
-  done(null, user.id);
-});
+// Define a route to handle the creation of workout data
+app.post("/workouts", (req, res) => {
+  // Assuming you have defined your Workout model
+  const Workout = mongoose.model("Workout");
 
-passport.deserializeUser(function (id, done) {
-  User.findById(id)
-    .then((user) => {
-      done(null, user);
+  // Create a new workout instance with data from the request body
+  const newWorkout = new Workout({
+    date: req.body.date,
+    training: req.body.training,
+    exerciseName: req.body.exerciseName,
+    sets: req.body.sets,
+    restIntervals: req.body.restIntervals,
+    tempo: req.body.tempo,
+    cardioType: req.body.cardioType,
+    duration: req.body.duration,
+    level: req.body.level,
+    calories: req.body.calories,
+    notes: req.body.notes,
+  });
+
+  // Save the new workout to the database
+  newWorkout
+    .save()
+    .then(() => {
+      console.log("Workout data saved successfully");
+      res.status(201).json({ message: "Workout data saved successfully" });
     })
     .catch((err) => {
-      done(err, null);
+      console.error("Error saving workout data:", err);
+      res.status(500).json({ error: "Error saving workout data" });
     });
 });
 
-//After finishing config, use the passport strategy. In this case Google and Facebook.
-passport.use(
-  new GoogleStrategy(
-    {
-      clientID: process.env.CLIENT_ID,
-      clientSecret: process.env.CLIENT_SECRET,
-      userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo", // Alternative profile URL since google+ is deprecated
-      callbackURL: "http://localhost:3000/auth/google/workout",
-    },
-    function (accessToken, refreshToken, profile, cb) {
-      User.findOrCreate({ googleId: profile.id }, function (err, user) {
-        return cb(err, user);
-      });
-    }
-  )
-);
-//Add Facebook authentication
-passport.use(
-  new FacebookStrategy(
-    {
-      clientID: process.env.FACEBOOK_APP_ID,
-      clientSecret: process.env.FACEBOOK_APP_SECRET,
-      callbackURL: "http://localhost:3000/auth/facebook/workout",
-    },
-    function (accessToken, refreshToken, profile, cb) {
-      User.findOrCreate({ facebookId: profile.id }, function (err, user) {
-        return cb(err, user);
-      });
-    }
-  )
-);
+//Get Workout by ID
+app.get("/workouts/:id", (req, res) => {
+  const Workout = mongoose.model("Workout");
 
-//Handle google authentication on both routes
-app.get(
-  "/auth/google",
-  passport.authenticate("google", { scope: ["profile"] })
-);
-
-app.get(
-  "/auth/google/callback",
-  passport.authenticate("google", { failureRedirect: "/login" }),
-  function (req, res) {
-    // Successful authentication, you can redirect the user to a profile page or perform other actions.
-    res.redirect("/workout");
-  }
-);
-//Handle Facebook authentication on both routes
-app.get("/auth/facebook", passport.authenticate("facebook"));
-app.get(
-  "/auth/facebook/callback",
-  passport.authenticate("facebook", { failureRedirect: "/login" }),
-  function (req, res) {
-    // Successful authentication, you can redirect the user to a profile page or perform other actions.
-    res.redirect("/workout");
-  }
-);
-
-//Handle Manual registration both () Signup and sign in)
-//Sign up route
-// Handle Manual registration (Signup)
-app.post("/signup", (req, res) => {
-  // Create a new user with the provided username and email
-  const newUser = new User({
-    username: req.body.username,
-    email: req.body.email,
-  });
-
-  // Use Passport.js's `register` method to handle user registration
-  User.register(newUser, req.body.password, (err, user) => {
-    if (err) {
-      console.error(err);
-      // Passport.js will handle existing user checks and other registration errors
-      return res.redirect("/signup"); // Redirect back to registration page on error
-    }
-
-    // If registration is successful, authenticate the user
-    passport.authenticate("local")(req, res, () => {
-      res.redirect("/workout"); // Redirect to the workout page after successful registration
-    });
-  });
-});
-
-// Login route
-app.post("/login", (req, res, next) => {
-  passport.authenticate("local", (err, user, info) => {
-    if (err) {
-      return next(err);
-    }
-    if (!user) {
-      return res.status(401).json({ message: "Authentication failed" });
-    }
-    req.login(user, (loginErr) => {
-      if (loginErr) {
-        return next(loginErr);
+  Workout.findById(req.params.id)
+    .then((workout) => {
+      if (!workout) {
+        return res.status(404).json({ error: "Workout not found" });
       }
-      return res.status(200).json({ message: "Login successful" });
+      res.json(workout);
+    })
+    .catch((err) => {
+      console.error("Error fetching workout data:", err);
+      res.status(500).json({ error: "Error fetching workout data" });
     });
-  })(req, res, next);
 });
+//Update workout
+app.put("/workouts/:id", (req, res) => {
+  const Workout = mongoose.model("Workout");
 
-app.post("/login", function (req, res) {
-  passport.authenticate("local", function (err, user, info) {
-    if (err) {
-      console.error(err);
-      return res.redirect("/login"); // Redirect to login page on error
-    }
-    if (!user) {
-      // Authentication failed, redirect to login page with a message
-      return res.redirect("/login?message=Authentication failed");
-    }
-
-    req.login(user, function (err) {
-      if (err) {
-        console.error(err);
-        return res.redirect("/login"); // Redirect to login page on error
+  Workout.findByIdAndUpdate(req.params.id, req.body, { new: true })
+    .then((updatedWorkout) => {
+      if (!updatedWorkout) {
+        return res.status(404).json({ error: "Workout not found" });
       }
-
-      // Authentication successful, redirect to the workout page
-      return res.redirect("/workout");
+      console.log("Workout data updated successfully");
+      res.json(updatedWorkout);
+    })
+    .catch((err) => {
+      console.error("Error updating workout data:", err);
+      res.status(500).json({ error: "Error updating workout data" });
     });
-  })(req, res);
 });
 
-// Allow authenticated users fill out their workout info and submit the workout planner form
-app.get("/workout", function (req, res) {
-  if (req.isAuthenticated()) {
-    res.render("workout"); // Render the "secret" template
-  } else {
-    res.redirect("/login"); // Redirect to login page if user is not authenticated
-  }
-});
-// Once the user is authenticated and their session gets saved, their user details are saved to req.user.
-app.post("/workout", async (req, res) => {
-  // Check if the user is authenticated
-  if (!req.isAuthenticated()) {
-    return res.status(401).send("Unauthorized"); // Return a 401 Unauthorized status if the user is not authenticated
-  }
+//Delete a workout
+app.delete("/workouts/:id", (req, res) => {
+  const Workout = mongoose.model("Workout");
 
-  const submittedWorkout = req.body.workout;
-
-  try {
-    const foundUser = await User.findById(req.user.id);
-
-    if (foundUser) {
-      foundUser.workouts.push(submittedWorkout);
-      await foundUser.save();
-      res.redirect("/workout");
-    } else {
-      res.status(404).send("User not found"); // Handle case when user doesn't exist
-    }
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("An error occurred"); // Handle general error
-  }
-});
-
-// Create a new goal
-router.post("/goals", async (req, res) => {
-  try {
-    const newGoal = new Goal(req.body);
-    await newGoal.save();
-    res.status(201).json(newGoal);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-});
-// Render the "goals" page if the user is authenticated
-app.get("/goals", function (req, res) {
-  if (req.isAuthenticated()) {
-    res.render("goals"); // Render the "goals" page if the user is authenticated
-  } else {
-    res.redirect("/login"); // Redirect to the login page if the user is not authenticated
-  }
-});
-//Save goals
-// Define an API route for saving goal details
-app.post("/goals", async (req, res) => {
-  try {
-    // Parse goal data from the request body
-    const { type, target, targetDate, comment } = req.body;
-
-    // Create a new goal instance
-    const goal = new Goal({
-      type,
-      target,
-      targetDate,
-      comment,
+  Workout.findByIdAndRemove(req.params.id)
+    .then((deletedWorkout) => {
+      if (!deletedWorkout) {
+        return res.status(404).json({ error: "Workout not found" });
+      }
+      console.log("Workout data deleted successfully");
+      res.json({ message: "Workout data deleted successfully" });
+    })
+    .catch((err) => {
+      console.error("Error deleting workout data:", err);
+      res.status(500).json({ error: "Error deleting workout data" });
     });
-
-    // Save the new goal document to the database
-    await goal.save();
-
-    res.status(201).json({ message: "Goal details saved successfully" });
-  } catch (error) {
-    console.error("Error:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
 });
 
-// Render the "view-goals" page if the user is authenticated
-app.get("/view-goals", function (req, res) {
-  if (req.isAuthenticated()) {
-    res.render("view-goals"); // Render the "view-goals" page if the user is authenticated
-  } else {
-    res.redirect("/login"); // Redirect to the login page if the user is not authenticated
-  }
-});
+// Define a route to retrieve all workouts
+app.get("/workouts", (req, res) => {
+  const Workout = mongoose.model("Workout");
 
-// Define the GET route for viewing goals
-app.get("/view-goals", async (req, res) => {
-  try {
-    // Assuming you have user authentication and the user's ID is available in req.user
-    const userId = req.user._id; // Replace with your actual user ID retrieval logic
-
-    // Query the database for the user's goals based on their ID
-    const userGoals = await Goal.find({ userId });
-
-    // Return the user's goals as JSON
-    res.status(200).json(userGoals);
-  } catch (error) {
-    console.error("Error:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
-
-// Define isAuthenticated middleware
-function isAuthenticated(req, res, next) {
-  if (req.isAuthenticated()) {
-    // If the user is authenticated, continue to the next middleware or route handler
-    return next();
-  }
-  // If the user is not authenticated, redirect them to the login page or send a 401 Unauthorized status
-  res.status(401).send("Unauthorized");
-}
-// Render the "workouts-history" page if the user is authenticated
-app.get("/workouts-history", function (req, res) {
-  if (req.isAuthenticated()) {
-    res.render("workouts-history"); // Render the "workouts-history" page if the user is authenticated
-  } else {
-    res.redirect("/login"); // Redirect to the login page if the user is not authenticated
-  }
-});
-
-// Define an API route for saving workout details
-app.post("/workouts-history", isAuthenticated, async (req, res) => {
-  try {
-    // Parse workout data from the request body
-    const {
-      date,
-      training,
-      exerciseName,
-      sets,
-      restIntervals,
-      tempo,
-      cardioType,
-      duration,
-      level,
-      calories,
-      notes,
-    } = req.body;
-
-    // Create a new workout instance
-    const workout = new Workout({
-      date,
-      training,
-      exerciseName,
-      sets,
-      restIntervals,
-      tempo,
-      cardioType,
-      duration,
-      level,
-      calories,
-      notes,
+  // Query the database to retrieve all workouts
+  Workout.find()
+    .then((workouts) => {
+      res.status(200).json(workouts); // Return all workout data as JSON response
+    })
+    .catch((err) => {
+      console.error("Error retrieving workouts:", err);
+      res.status(500).json({ error: "Error retrieving workouts" });
     });
-
-    // Save the new workout document to the database
-    await workout.save();
-
-    res.status(201).json({ message: "Workout details saved successfully" });
-  } catch (error) {
-    console.error("Error:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
 });
 
-// Logout route
-app.get("/logout", (req, res) => {
-  req.logout();
-  res.status(200).json({ message: "Logout successful" });
-});
-
-app.post("/signup", (req, res) => {
-  // Access signup data from req.body
-  const { name, email, password } = req.body;
-
-  // Replace this with your signup logic (e.g., database insertion and validation)
-  console.log("Received signup data:", { name, email, password });
-
-  // Respond with a success status code (e.g., 201)
-  res.status(201).json({ message: "Signup successful" });
-});
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
